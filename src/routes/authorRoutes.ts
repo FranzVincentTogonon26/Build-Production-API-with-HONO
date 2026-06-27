@@ -1,26 +1,35 @@
 
 import { Hono } from 'hono'
+import z from 'zod'
+import { sValidator } from '@hono/standard-validator'
+import { db } from '../db/db.ts'
+import { AuthorTable } from '../db/schemas/authors.ts';
+import { eq } from 'drizzle-orm';
+import { apiKeyAuth, type ApiKeyEnv } from "../middleware/auth.ts"
 
 const app = new Hono()
 
-const authors = [
-  {
-    id: '1',
-    name: 'Franz'
-  },
-  {
-    id: '2',
-    name: 'Vincent'
-  }
-]
-
-app.get('/', (c) => {
-  return c.text('Hello Authors!')
+const createAuthorSchema = z.object({
+  name: z.string().min(1),
+  birthday: z.coerce.date().optional()
 })
 
-app.get('/:id', c => {
+const updateAuthorSchema = z.object({
+  name: z.string().min(1).optional(),
+  birthday: z.coerce.date().nullable().optional()
+})
+
+
+// Public Routes
+
+app.get('/', async c => {
+  const authors = await db.query.AuthorTable.findMany()
+  return c.json(authors)
+})
+
+app.get('/:id', async c => {
   const id = c.req.param('id')
-  const author = authors.find( a => a.id === id)
+  const author = await db.query.AuthorTable.findFirst( { where: {id} } )
 
   if(author == null){
     return c.json({ error: 'Author not found..'}, 404)
@@ -29,9 +38,40 @@ app.get('/:id', c => {
   return c.json(author)
 })
 
-app.post('/', c => {
+
+
+// Private Routes need API Key to Access
+
+
+const protectedApp = new Hono<ApiKeyEnv>()
+protectedApp.use(apiKeyAuth)
+
+protectedApp.post('/', sValidator('json', createAuthorSchema), async c => {
+  const data = c.req.valid('json')
+  const [author] = await db.insert(AuthorTable).values(data).returning()
+
+  return c.json(author, 201)
+})
+
+protectedApp.put('/:id', sValidator('json', updateAuthorSchema), async c => {
+  const id = c.req.param('id')
+  const data = c.req.valid('json')
+  const [author] = await db.update(AuthorTable).set(data).where(eq(AuthorTable.id, id)).returning()
+  
+  if(author == null){
+    return c.json({ error: 'Author not found..'}, 404)
+  }
 
   return c.json(author)
 })
 
-export default app
+protectedApp.delete('/:id', async c => {
+  const id = c.req.param('id')
+  await db.delete(AuthorTable).where(eq(AuthorTable.id, id))
+
+  return c.body(null, 204)
+})
+
+app.route("/", protectedApp)
+
+export default app 

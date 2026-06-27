@@ -2,10 +2,16 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 
 import authorRoutes from './routes/authorRoutes.ts'
+import authRoutes from './routes/authRoutes.ts'
+import apiKeyRoutes from './routes/apiKeyRoutes.ts'
+import bookRoutes from './routes/bookRoutes.ts'
 
 const app = new Hono()
 
-app.route('/auhtors', authorRoutes )
+app.route('/authors', authorRoutes )
+app.route('/books', bookRoutes )
+app.route('/auth', authRoutes )
+app.route('/api-keys', apiKeyRoutes )
 
 serve({
   fetch: app.fetch,
